@@ -11,6 +11,9 @@ export const mutations = {
   setUser(state, user) {
     state.user = user;
   },
+  setAccessToken(state, accessToken) {
+    state.accessToken = accessToken;
+  },
   login(state, user) {
     state.currentUser = user;
   },

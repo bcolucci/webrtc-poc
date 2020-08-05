@@ -1,12 +1,17 @@
 <template>
   <div id="dashboard">
+    <p>Connected as {{ user.username }}</p>
     <div class="container">
-      <h1>Hello {{ user.username }}!</h1>
       <FormulateForm>
         <fieldset>
-          <legend>Room name (leave empty to create one)</legend>
+          <legend>Room name:</legend>
           <div class="row">
-            <FormulateInput type="text" label="Room name" v-model="roomName" />
+            <FormulateInput
+              type="text"
+              label="Room name"
+              placeholder="leave blank to create one"
+              v-model="roomName"
+            />
             <FormulateInput
               type="submit"
               label="Join / Create"
@@ -37,24 +42,31 @@
       <h2 v-if="room">Room {{ room.name }}</h2>
       <div class="row">
         <div id="localTrack"></div>
+        <div id="remoteTracks"></div>
       </div>
     </div>
-    <div class="container">
-      <div id="remoteTracks"></div>
-    </div>
+    <chat v-bind:channel="channel" />
   </div>
 </template>
 
 <script>
+import shortid from "shortid";
+import socket from "../socket";
 import { mapActions } from "vuex";
 import Twilio, { createLocalVideoTrack } from "twilio-video";
+import TwilioChat from "twilio-chat";
+import Chat from "./Chat.vue";
 
 export default {
   name: "Dashboard",
+  components: {
+    Chat
+  },
   data() {
     return {
       roomName: "",
       room: undefined,
+      channel: undefined,
       localTrack: undefined,
       remoteTrackParticipants: {}
     };
@@ -65,7 +77,7 @@ export default {
     }
   },
   methods: {
-    ...mapActions(["fetchVideoToken", "signOut"]),
+    ...mapActions(["fetchAccessToken", "signOut"]),
     getLocalTrackContainer() {
       return document.getElementById("localTrack");
     },
@@ -116,15 +128,67 @@ export default {
         this.trackPublished(publication, participant)
       );
     },
-    async onJoinRoom() {
-      this.leaveRoomIfJoined();
+    async initChat(accessToken) {
+      const chatClient = await TwilioChat.create(accessToken);
 
-      const { roomName, token } = await this.fetchVideoToken(this.roomName);
+      chatClient.on("channelInvited", async channel => {
+        try {
+          this.channel = await channel.join();
+        } catch (err) {
+          this.channel = channel;
+          console.error(err.message);
+        }
+      });
 
-      this.localTrack = await createLocalVideoTrack();
+      const createChat = async () => {
+        const channel = await chatClient.createChannel({
+          isPrivate: true,
+          uniqueName: this.roomName
+        });
+        channel.imCreator = true;
+        try {
+          this.channel = await channel.join();
+        } catch (err) {
+          this.channel = channel;
+          console.error(err.message);
+        }
+        socket.emit("chatCreated", this.roomName, () => {
+          socket.on("inviteToChat", async username => {
+            try {
+              await this.channel.invite(username);
+            } catch (err) {
+              console.error(err.message);
+            }
+          });
+        });
+      };
 
-      this.room = await Twilio.connect(token, {
-        name: roomName,
+      const tryToJoinExistingChat = async () => {
+        try {
+          const existingChannel = await chatClient.getChannelByUniqueName(
+            this.roomName
+          );
+          this.channel = await existingChannel.join().catch(err => {
+            console.error(err.message);
+            return existingChannel;
+          });
+        } catch (err) {
+          console.error(err.message);
+          socket.emit("askChatInvitation", this.roomName, this.user.username);
+        }
+      };
+
+      socket.emit("doesChatExists", this.roomName, async exists => {
+        if (exists) {
+          tryToJoinExistingChat();
+        } else {
+          createChat();
+        }
+      });
+    },
+    async initCall(accessToken) {
+      this.room = await Twilio.connect(accessToken, {
+        name: this.roomName,
         audio: true,
         video: true,
         tracks: [this.localTrack]
@@ -135,8 +199,16 @@ export default {
       this.room.participants.forEach(this.participantConnected);
       this.room.on("participantConnected", this.participantConnected);
     },
-    created() {
-      window.addEventListener("beforeunload", this.leaveRoomIfJoined);
+    async onJoinRoom() {
+      this.leaveRoomIfJoined();
+
+      this.localTrack = await createLocalVideoTrack();
+
+      this.roomName = this.roomName || shortid();
+      const accessToken = await this.fetchAccessToken(this.roomName);
+
+      this.initChat(accessToken);
+      this.initCall(accessToken);
     },
     onSignOut() {
       this.leaveRoomIfJoined();
@@ -145,19 +217,32 @@ export default {
     onEndCall() {
       this.leaveRoomIfJoined();
       this.room = null;
+      this.channel = null;
     },
     leaveRoomIfJoined() {
+      this.token = undefined;
       this.getLocalTrackContainer().innerHTML = "";
       this.getRemoteTracksContainer().innerHTML = "";
+      if (this.channel && this.channel.imCreator) {
+        socket.emit("closeChat");
+        this.channel.delete();
+      }
       if (this.room) {
         this.room.disconnect();
       }
     }
+  },
+  created() {
+    socket.on("chatClosed", () => (this.channel = null));
+    window.addEventListener("beforeunload", this.leaveRoomIfJoined);
   }
 };
 </script>
 
 <style scoped>
+#dashboard {
+  padding-top: 50px;
+}
 .join-btn {
   margin-top: 22px;
 }

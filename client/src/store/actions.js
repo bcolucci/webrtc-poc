@@ -22,13 +22,19 @@ const signIn = async ({ commit }, { username, password }) => {
   return false;
 };
 
-const fetchVideoToken = ({ state }, roomName) =>
-  api.fetchVideoToken({ authToken: state.authToken, roomName });
+const fetchAccessToken = async ({ state, commit }, roomName) => {
+  const accessToken = await api.fetchAccessToken({
+    authToken: state.authToken,
+    roomName
+  });
+  commit("setAccessToken", accessToken);
+  return accessToken;
+};
 
 export default {
   fetchUser,
   signIn,
-  fetchVideoToken,
+  fetchAccessToken,
   signOut({ commit }) {
     commit("signOut");
   },

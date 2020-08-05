@@ -44,7 +44,7 @@ export const signIn = async ({ username, password }) => {
   }
 };
 
-export const fetchVideoToken = async ({ authToken, roomName }) => {
+export const fetchAccessToken = async ({ authToken, roomName }) => {
   try {
     const res = await fetch(`${SERVER_URL}/token?roomName=${roomName}`, {
       headers: {

@@ -13,6 +13,9 @@
     "node-fetch": "^2.6.0",
     "sass": "^1.26.10",
     "sass-loader": "^9.0.2",
+    "shortid": "^2.2.15",
+    "socket.io-client": "^2.3.0",
+    "twilio-chat": "^4.0.0",
     "twilio-video": "^2.7.1",
     "vue": "^2.6.11",
     "vuex": "^3.5.1"

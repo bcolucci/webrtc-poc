@@ -13,6 +13,7 @@ const persistedData = JSON.parse(
 export default new Vuex.Store({
   state: {
     authToken: undefined,
+    accessToken: undefined,
     ...persistedData,
     user: undefined
   },
